@@ -5,8 +5,25 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingBirth = false
+    @State private var showingFullScreen = false
+    @State private var orbitViewState = OrbitViewState()
 
     var body: some View {
+        Group {
+            if showingFullScreen { fullScreenObservation }
+            else { homeContent }
+        }
+        .sheet(isPresented: $showingBirth) {
+            BirthSheet(input: store.input) { birth in store.generate(birth) }
+                .presentationDragIndicator(.visible)
+                .presentationCornerRadius(28)
+        }
+        .task { store.loadIfNeeded() }
+        .onChange(of: scenePhase) { _, phase in if phase != .active { store.pause() } }
+        .onChange(of: reduceMotion) { _, reduced in if reduced { store.pause() } }
+    }
+
+    private var homeContent: some View {
         GeometryReader { geometry in
         ZStack {
             TaoTheme.paper.ignoresSafeArea()
@@ -51,14 +68,6 @@ struct HomeView: View {
         }
         .foregroundStyle(TaoTheme.ink)
         .safeAreaInset(edge: .bottom, spacing: 0) { playbackBar }
-        .sheet(isPresented: $showingBirth) {
-            BirthSheet(input: store.input) { birth in store.generate(birth) }
-                .presentationDragIndicator(.visible)
-                .presentationCornerRadius(28)
-        }
-        .task { store.loadIfNeeded() }
-        .onChange(of: scenePhase) { _, phase in if phase != .active { store.pause() } }
-        .onChange(of: reduceMotion) { _, reduced in if reduced { store.pause() } }
     }
 
     private var header: some View {
@@ -101,8 +110,9 @@ struct HomeView: View {
             }
             ZStack {
                 OrbitStage(natal: store.natal, flow: store.flow, frameID: store.frameID,
-                           isActive: scenePhase == .active && !showingBirth && !store.disableRotation,
-                           reduceMotion: reduceMotion)
+                           isActive: scenePhase == .active && !showingBirth && !showingFullScreen && !store.disableRotation,
+                           reduceMotion: reduceMotion, viewState: orbitViewState,
+                           onTap: { openFullScreen() })
                     .accessibilityIdentifier("orbitStage")
                 if store.isLoading || store.isSeeking {
                     HStack(spacing: 10) {
@@ -117,10 +127,76 @@ struct HomeView: View {
             HStack {
                 Text("拖动转向 · 双指缩放").font(.system(size: 10))
                 Spacer()
-                Text("亮点标记当前流盘位置").font(.system(size: 10))
+                Button(action: openFullScreen) {
+                    Label("全屏观看", systemImage: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 10, weight: .medium))
+                        .frame(minHeight: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(store.frame == nil || store.isLoading)
+                .accessibilityIdentifier("fullScreenButton")
             }
             .foregroundStyle(TaoTheme.muted)
         }
+    }
+
+    private func openFullScreen() {
+        guard store.frame != nil, !store.isLoading else { return }
+        showingFullScreen = true
+    }
+
+    private var fullScreenObservation: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Button { showingFullScreen = false } label: {
+                    Label("返回主界面", systemImage: "arrow.left")
+                        .font(.system(size: 13, weight: .medium))
+                        .padding(.horizontal, 14).frame(minHeight: 44)
+                        .background(TaoTheme.ink.opacity(0.05), in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("returnHomeButton")
+                Spacer()
+                Text("智道 · 全屏").font(.system(size: 15, design: .serif))
+            }
+            .padding(.horizontal, 20).padding(.top, 8)
+
+            OrbitStage(natal: store.natal, flow: store.flow, frameID: store.frameID,
+                       isActive: scenePhase == .active && showingFullScreen && !store.disableRotation,
+                       reduceMotion: reduceMotion, viewState: orbitViewState, layout: .vertical)
+                .overlay {
+                    VStack(spacing: 10) {
+                        HStack {
+                            Text("生辰核").font(.system(size: 15, weight: .medium, design: .serif))
+                            Spacer()
+                            Text("本始不移").font(.system(size: 10)).foregroundStyle(TaoTheme.muted)
+                        }
+                        .padding(16)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        HStack {
+                            Text("流盘").font(.system(size: 15, weight: .medium, design: .serif))
+                            Spacer()
+                            Text(store.frame.map { TaoTheme.format($0.date, pattern: "yyyy.MM.dd  HH:mm:ss") } ?? "—")
+                                .font(.system(size: 10, design: .monospaced)).monospacedDigit()
+                                .accessibilityIdentifier("fullscreenFlowDate")
+                                .accessibilityValue(store.frame.map { String(Int64($0.epochMs)) } ?? "0")
+                        }
+                        .foregroundStyle(TaoTheme.paper)
+                        .padding(16)
+                        .frame(maxHeight: .infinity, alignment: .top)
+                    }
+                    .allowsHitTesting(false)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 16)
+            Text("拖动转向 · 双指缩放 · 双击复位 · 亮点为当前流盘位置")
+                .font(.system(size: 10)).foregroundStyle(TaoTheme.muted)
+                .padding(.horizontal, 16).padding(.bottom, 6)
+        }
+        .foregroundStyle(TaoTheme.ink)
+        .background(TaoTheme.paper.ignoresSafeArea())
+        .safeAreaInset(edge: .bottom, spacing: 0) { playbackBar }
     }
 
     private func orbitTitle(number: String, name: String, subtitle: String) -> some View {
