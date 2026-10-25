@@ -201,6 +201,107 @@ final class TAONIQFlowUITests: XCTestCase {
         add(screenshot)
     }
 
+    /// Measure the rendered screen's actual civil clock while normal 3D rotation
+    /// remains enabled. Selection styling alone is not proof that speed changed.
+    @MainActor
+    func testMeasuredPlaybackRatesChangeWithEverySpeedWhileRotating() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--uitesting"]
+        app.launch()
+        let play = app.buttons["playPauseButton"]
+        XCTAssertTrue(play.waitForExistence(timeout: 30))
+        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: play)
+        waitForExpectations(timeout: 45)
+        let date = app.descendants(matching: .any)["flowDate"]
+        let firstMode = app.buttons["speed-hour"]
+        for _ in 0..<4 where !firstMode.isHittable { app.swipeUp() }
+        XCTAssertTrue(firstMode.isHittable)
+        firstMode.tap()
+        play.tap()
+
+        func readClock() throws -> (epoch: Double, wall: TimeInterval, querySeconds: TimeInterval) {
+            let before = ProcessInfo.processInfo.systemUptime
+            let raw = date.value as? String
+            let after = ProcessInfo.processInfo.systemUptime
+            let epoch = try XCTUnwrap(raw.flatMap(Double.init), "flowDate must expose its accepted epoch in milliseconds")
+            return (epoch, (before + after) / 2, after - before)
+        }
+        func waitWallClock(_ seconds: TimeInterval) {
+            let waited = expectation(description: "Observe real playback for \(seconds) wall seconds")
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { waited.fulfill() }
+            waitForExpectations(timeout: seconds + 8)
+        }
+
+        let modes = ["hour", "day", "month", "year", "dayun", "hour"]
+        var measurements: [[String: Any]] = []
+        var rates: [Double] = []
+        var selectedStates: [Bool] = []
+        var playingStates: [Bool] = []
+        var monotonicStates: [Bool] = []
+        for (index, mode) in modes.enumerated() {
+            let beforeSwitch = try readClock()
+            let button = app.buttons["speed-" + mode]
+            button.tap()
+            let selected = (button.value as? String) == "selected"
+            let playingAfterTap = (play.value as? String) == "playing"
+            // A single packet already in flight may retain the previous mode.
+            // Exclude that bounded transition from the steady-rate measurement.
+            waitWallClock(0.4)
+            let start = try readClock()
+            waitWallClock(2.0)
+            let end = try readClock()
+            let wall = end.wall - start.wall
+            let delta = end.epoch - start.epoch
+            let rate = delta / 1_000 / max(wall, 0.000_001)
+            let playing = playingAfterTap && (play.value as? String) == "playing"
+            selectedStates.append(selected)
+            playingStates.append(playing)
+            monotonicStates.append(start.epoch >= beforeSwitch.epoch && end.epoch > start.epoch)
+            rates.append(rate)
+            let record: [String: Any] = [
+                "index": index, "mode": mode,
+                "detail": app.staticTexts["speedDetail"].label,
+                "selected": selected, "playing": playing,
+                "epochBeforeSwitchMs": beforeSwitch.epoch,
+                "startEpochMs": start.epoch, "endEpochMs": end.epoch,
+                "wallSeconds": wall, "civilDeltaMs": delta,
+                "civilSecondsPerWallSecond": rate,
+                "civilDaysPerWallSecond": rate / 86_400,
+                "startQuerySeconds": start.querySeconds, "endQuerySeconds": end.querySeconds
+            ]
+            measurements.append(record)
+            let json = try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys])
+            print("TAONIQ_SPEED_SAMPLE", String(decoding: json, as: UTF8.self))
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "measured-speed-\(index)-\(mode)"
+            shot.lifetime = .keepAlways
+            add(shot)
+        }
+        if (play.value as? String) == "playing" { play.tap() }
+        let data = try JSONSerialization.data(withJSONObject: measurements, options: [.prettyPrinted, .sortedKeys])
+        let report = XCTAttachment(string: String(decoding: data, as: UTF8.self))
+        report.name = "measured-playback-rates-normal-rotation.json"
+        report.lifetime = .keepAlways
+        add(report)
+
+        // Collect every mode before reporting failures, including the return to
+        // hour mode. Loose ratio floors tolerate a busy simulator but reject
+        // identical effective speeds or a fast-mode packet stream that sticks.
+        for index in modes.indices {
+            XCTAssertTrue(selectedStates[index], "Mode \(index) \(modes[index]) was not selected")
+            XCTAssertTrue(playingStates[index], "Switching to \(modes[index]) stopped playback")
+            XCTAssertTrue(monotonicStates[index], "Switching to \(modes[index]) reset or stalled the displayed clock")
+            XCTAssertGreaterThan(rates[index], 0, "No actual progress for \(modes[index])")
+        }
+        XCTAssertGreaterThan(rates[1], rates[0] * 3, "Day should be visibly faster than hour")
+        XCTAssertGreaterThan(rates[2], rates[1] * 3, "Month should be visibly faster than day")
+        XCTAssertGreaterThan(rates[3], rates[2] * 1.6, "Year should be visibly faster than month")
+        XCTAssertGreaterThan(rates[4], rates[3] * 1.2, "Dayun and year must not collapse to the same effective speed")
+        XCTAssertGreaterThan(rates[5], rates[0] * 0.4, "Returning to hour mode must keep progressing")
+        XCTAssertLessThan(rates[5], rates[0] * 2.5, "Returning to hour mode must restore its slow cadence")
+        XCTAssertLessThan(rates[5], rates[4] / 20, "The final hour selection must slow the real clock, not only the button")
+    }
+
     private func dateChangedPredicate(_ old: String) -> NSPredicate {
         NSPredicate { object, _ in ((object as? XCUIElement)?.value as? String) != old }
     }

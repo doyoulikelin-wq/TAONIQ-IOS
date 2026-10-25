@@ -117,10 +117,7 @@ struct HomeView: View {
             HStack {
                 Text("拖动转向 · 双指缩放").font(.system(size: 10))
                 Spacer()
-                HStack(spacing: 5) {
-                    Circle().fill(TaoTheme.ink.opacity(store.isPlaying ? 1 : 0.3)).frame(width: 4, height: 4)
-                    Text(store.isPlaying ? "时间流动中" : reduceMotion ? "拖动观察" : "两图同步旋转")
-                }.font(.system(size: 10))
+                Text("亮点标记当前流盘位置").font(.system(size: 10))
             }
             .foregroundStyle(TaoTheme.muted)
         }
@@ -153,7 +150,7 @@ struct HomeView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text("流盘").font(.system(size: 12, weight: .semibold))
                     Spacer()
-                    Text(store.frame.map { TaoTheme.format($0.date) } ?? "—")
+                    Text(store.frame.map { TaoTheme.format($0.date, pattern: "yyyy.MM.dd  HH:mm:ss") } ?? "—")
                         .font(.system(size: 10, design: .monospaced)).monospacedDigit()
                         .foregroundStyle(TaoTheme.muted)
                         .accessibilityIdentifier("flowDate")
@@ -200,14 +197,25 @@ struct HomeView: View {
     }
 
     private var playbackBar: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             Rectangle().fill(TaoTheme.line).frame(height: 0.5)
+            HStack {
+                Text("演化速度").font(.system(size: 10, weight: .medium))
+                Spacer()
+                Text(store.speed.detail)
+                    .font(.system(size: 10)).foregroundStyle(TaoTheme.muted)
+                    .accessibilityIdentifier("speedDetail")
+            }
+            .padding(.horizontal, 22)
+            speedSelector.padding(.horizontal, 22)
             HStack(spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(store.status).font(.system(size: 12, weight: .medium))
                         .accessibilityIdentifier("loadingStatus")
-                    Text(store.speed.detail)
-                        .font(.system(size: 9)).foregroundStyle(TaoTheme.muted)
+                    Text(store.frame.map { TaoTheme.format($0.date, pattern: "yyyy.MM.dd  HH:mm:ss") } ?? "五层同时作用，速度只改变观看快慢")
+                        .font(.system(size: 10, design: .monospaced)).monospacedDigit()
+                        .foregroundStyle(TaoTheme.muted)
+                        .accessibilityIdentifier("playbackDate")
                 }
                 Spacer(minLength: 2)
                 Button { store.togglePlayback() } label: {
@@ -235,5 +243,30 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity)
         .background(TaoTheme.paper)
+    }
+
+    private var speedSelector: some View {
+        HStack(spacing: 3) {
+            ForEach(EvolutionSpeed.allCases) { speed in
+                let selected = store.speed == speed
+                Button { store.setSpeed(speed) } label: {
+                    Text(speed.title)
+                        .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
+                        .foregroundStyle(selected ? TaoTheme.paper : TaoTheme.ink)
+                        .background(selected ? TaoTheme.ink : Color.clear, in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("speed-\(speed.rawValue)")
+                .accessibilityLabel("\(speed.title)尺度演化")
+                .accessibilityValue(selected ? "selected" : "unselected")
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(TaoTheme.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
+        .disabled(store.isLoading || store.isSeeking)
+        .accessibilityHint("五层同时作用，速度只改变观看快慢")
     }
 }

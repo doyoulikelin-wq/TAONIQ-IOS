@@ -3,6 +3,20 @@ import SceneKit
 @testable import TAONIQ
 
 final class OrbitGeometryTests: XCTestCase {
+    func testRecentTrailIncludesTheActualOffGridEndpointWithoutResampling() throws {
+        let points = (0..<9_002).flatMap { i -> [Double] in
+            let t = Double(i) / 100
+            return [cos(t), sin(t), t]
+        }
+        let tail = OrbitGeometry.recentPoints(points)
+        XCTAssertEqual(tail, Array(points.suffix(160 * 3)))
+        XCTAssertEqual(Array(tail.suffix(3)), Array(points.suffix(3)))
+        let geometry = try XCTUnwrap(OrbitGeometry.make(tail, dark: true))
+        XCTAssertEqual(geometry.elements.first?.primitiveCount, 159)
+        XCTAssertEqual(OrbitGeometry.recentPoints([1, 2, 3, 4, 5, 6]), [1, 2, 3, 4, 5, 6])
+        XCTAssertTrue(OrbitGeometry.recentPoints([1, 2, 3, 4, .nan, 6]).isEmpty)
+    }
+
     func testFullTrajectoryKeepsEveryOriginalAdjacentSegment() throws {
         let points = (0..<9_001).flatMap { i -> [Double] in
             let t = Double(i) / 100

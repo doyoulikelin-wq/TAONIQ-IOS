@@ -14,34 +14,6 @@ struct TimeControlsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             Rectangle().fill(TaoTheme.line).frame(height: 0.5)
-            VStack(alignment: .leading, spacing: 10) {
-                Text("演化速度").font(.system(size: 12, weight: .semibold))
-                HStack(spacing: 3) {
-                    ForEach(EvolutionSpeed.allCases) { speed in
-                        let selected = store.speed == speed
-                        Button { store.setSpeed(speed) } label: {
-                            Text(speed.title)
-                                .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                                .foregroundStyle(selected ? TaoTheme.paper : TaoTheme.ink)
-                                .background(selected ? TaoTheme.ink : Color.clear, in: RoundedRectangle(cornerRadius: 10))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("speed-\(String(describing: speed))")
-                        .accessibilityLabel("\(speed.title)尺度演化")
-                        .accessibilityValue(selected ? "selected" : "unselected")
-                        .accessibilityAddTraits(selected ? .isSelected : [])
-                    }
-                }
-                .padding(3)
-                .background(TaoTheme.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
-                .disabled(store.isLoading || store.isSeeking)
-                Text(store.speed.detail)
-                    .font(.system(size: 10)).foregroundStyle(TaoTheme.muted)
-                    .accessibilityIdentifier("speedDetail")
-                Text("五层同时作用，速度只改变观看快慢。")
-                    .font(.system(size: 10)).foregroundStyle(TaoTheme.muted)
-            }
             if let frame = store.frame {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {

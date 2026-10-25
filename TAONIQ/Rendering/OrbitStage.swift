@@ -83,7 +83,16 @@ enum OrbitGeometry {
         return result
     }
 
-    static func make(_ points: [Double], dark: Bool, projection: Projection = .reference) -> SCNGeometry? {
+    /// Keep a short, chronological tail visible over the full observation window.
+    /// These are actual final samples, including the integrated off-grid head.
+    static func recentPoints(_ points: [Double], count: Int = 160) -> [Double] {
+        guard points.count >= 6, points.count % 3 == 0, count >= 2,
+              points.allSatisfy(\.isFinite) else { return [] }
+        return Array(points.suffix(min(count, points.count / 3) * 3))
+    }
+
+    static func make(_ points: [Double], dark: Bool, projection: Projection = .reference,
+                     opacity: CGFloat? = nil) -> SCNGeometry? {
         guard points.count >= 6, points.allSatisfy(\.isFinite) else { return nil }
         let vertices = vertices(points, projection: projection)
         let indices = indices(points)
@@ -95,7 +104,7 @@ enum OrbitGeometry {
         let geometry = SCNGeometry(sources: [SCNGeometrySource(vertices: vertices)], elements: [element])
         let material = SCNMaterial()
         material.lightingModel = .constant
-        material.diffuse.contents = dark ? UIColor(white: 0.98, alpha: 0.62) : UIColor(white: 0.08, alpha: 0.56)
+        material.diffuse.contents = dark ? UIColor(white: 0.98, alpha: opacity ?? 0.62) : UIColor(white: 0.08, alpha: opacity ?? 0.56)
         material.isDoubleSided = true
         material.readsFromDepthBuffer = true
         material.writesToDepthBuffer = false
@@ -115,6 +124,8 @@ final class DualOrbitView: UIView, UIGestureRecognizerDelegate {
     private let panes = [AccessibleOrbitView(), AccessibleOrbitView()]
     private var cameras: [SCNNode] = []
     private var orbits: [SCNNode] = []
+    private let recentFlow = SCNNode()
+    private let flowHead = SCNNode()
     private var displayLink: CADisplayLink?
     private var lastTick: CFTimeInterval?
     private var lastRevision: Int?
@@ -159,6 +170,20 @@ final class DualOrbitView: UIView, UIGestureRecognizerDelegate {
             pane.scene?.rootNode.addChildNode(camera); pane.pointOfView = camera
             let orbit = SCNNode(); pane.scene?.rootNode.addChildNode(orbit)
             cameras.append(camera); orbits.append(orbit)
+            if dark {
+                pane.scene?.rootNode.addChildNode(recentFlow)
+                let dot = SCNSphere(radius: 0.018)
+                dot.segmentCount = 12
+                let material = SCNMaterial()
+                material.lightingModel = .constant
+                material.diffuse.contents = UIColor.white
+                material.readsFromDepthBuffer = false
+                dot.materials = [material]
+                flowHead.geometry = dot
+                flowHead.renderingOrder = 10
+                flowHead.isHidden = true
+                pane.scene?.rootNode.addChildNode(flowHead)
+            }
             pane.isAccessibilityElement = true
             pane.accessibilityIdentifier = dark ? "flowOrbit" : "natalOrbit"
             pane.accessibilityLabel = dark ? "流盘三维轨迹" : "固定生辰核三维轨迹"
@@ -197,7 +222,18 @@ final class DualOrbitView: UIView, UIGestureRecognizerDelegate {
         }
         if lastRevision != revision {
             lastRevision = revision
-            orbits[1].geometry = OrbitGeometry.make(flow, dark: true, projection: projection)
+            orbits[1].geometry = OrbitGeometry.make(flow, dark: true, projection: projection, opacity: 0.23)
+            let recent = OrbitGeometry.recentPoints(flow)
+            recentFlow.geometry = OrbitGeometry.make(recent, dark: true, projection: projection, opacity: 1)
+            // No decorative animation or interpolation: the marker follows the
+            // same computed endpoint as the calendar clock, at every speed.
+            SCNTransaction.begin()
+            SCNTransaction.animationDuration = 0
+            if let endpoint = OrbitGeometry.vertices(Array(recent.suffix(3)), projection: projection).last {
+                flowHead.position = endpoint
+                flowHead.isHidden = false
+            } else { flowHead.isHidden = true }
+            SCNTransaction.commit()
         }
         for pane in panes { pane.setNeedsDisplay() }
     }
