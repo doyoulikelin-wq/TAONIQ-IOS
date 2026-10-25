@@ -7,6 +7,7 @@ struct HomeView: View {
     @State private var showingBirth = false
 
     var body: some View {
+        GeometryReader { geometry in
         ZStack {
             TaoTheme.paper.ignoresSafeArea()
             ScrollView {
@@ -14,6 +15,7 @@ struct HomeView: View {
                     header
                     orbitSection
                     information
+                    TimeControlsView(store: store)
                     if let error = store.errorMessage {
                         VStack(alignment: .leading, spacing: 7) {
                             Label("暂时未能生成", systemImage: "exclamationmark.circle")
@@ -37,6 +39,15 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollIndicators(.hidden)
+        }
+        .overlay(alignment: .top) {
+            // Keep scrolled content out of the system status area on every device.
+            TaoTheme.paper
+                .frame(height: geometry.safeAreaInsets.top)
+                .offset(y: -geometry.safeAreaInsets.top)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         }
         .foregroundStyle(TaoTheme.ink)
         .safeAreaInset(edge: .bottom, spacing: 0) { playbackBar }
@@ -93,10 +104,10 @@ struct HomeView: View {
                            isActive: scenePhase == .active && !showingBirth && !store.disableRotation,
                            reduceMotion: reduceMotion)
                     .accessibilityIdentifier("orbitStage")
-                if store.isLoading {
+                if store.isLoading || store.isSeeking {
                     HStack(spacing: 10) {
                         ProgressView().tint(TaoTheme.ink)
-                        Text("正在生成轨迹").font(.footnote)
+                        Text(store.isSeeking ? "正在定位流盘" : "正在生成轨迹").font(.footnote)
                     }
                     .padding(.horizontal, 18).padding(.vertical, 13)
                     .background(TaoTheme.paper, in: Capsule())
@@ -195,7 +206,7 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(store.status).font(.system(size: 12, weight: .medium))
                         .accessibilityIdentifier("loadingStatus")
-                    Text("每秒流过 7 日 · 平滑演变")
+                    Text(store.speed.detail)
                         .font(.system(size: 9)).foregroundStyle(TaoTheme.muted)
                 }
                 Spacer(minLength: 2)
@@ -211,7 +222,7 @@ struct HomeView: View {
                     .background(TaoTheme.ink.opacity(store.isLoading || store.frame == nil ? 0.3 : 1), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(store.isLoading || store.frame == nil || store.errorMessage != nil || reduceMotion)
+                .disabled(store.isLoading || store.isSeeking || store.frame == nil || store.errorMessage != nil || reduceMotion)
                 .accessibilityIdentifier("playPauseButton")
                 .accessibilityLabel(store.isPlaying ? "暂停演化" : "播放流盘演化")
                 .accessibilityValue(store.isPlaying ? "playing" : "paused")

@@ -7,12 +7,22 @@ struct BirthInput: Codable, Equatable, Sendable {
     static let demo = BirthInput(birth: "1975-08-27T04:00:00", gender: "male")
 }
 
+struct DayunPeriod: Codable, Equatable, Identifiable, Sendable {
+    let step: Int
+    let pillar: String
+    let startMs: Double
+    let endMs: Double
+
+    var id: Int { step }
+}
+
 struct OrbitFrame: Decodable, Sendable {
     let natal: [Double]?
     let flow: [Double]
     let birthPillars: [String]
     let flowPillars: [String]
     let dayun: String
+    let dayunPeriods: [DayunPeriod]
     let epochMs: Double
     let birthMs: Double
     let nowMs: Double

@@ -15,12 +15,18 @@ final class OrbitEngine: @unchecked Sendable {
         let birthPillars: [String]
         let flowPillars: [String]
         let dayun: String
+        let dayunPeriods: [DayunPeriod]
         let epochMs: Double
         let birthMs: Double
         let nowMs: Double
         let seedPointsRemaining: Int
         let profileLabel: String
         let mode: String
+    }
+
+    private struct GenerationRequest: Encodable {
+        let input: BirthInput
+        let epochMs: Double?
     }
 
     private let queue = DispatchQueue(label: "app.taoniq.engine", qos: .userInitiated)
@@ -33,8 +39,12 @@ final class OrbitEngine: @unchecked Sendable {
         self.resourceDirectory = resourceDirectory
     }
 
-    func generate(_ input: BirthInput) async throws -> OrbitFrame {
-        let data = try JSONEncoder().encode(input)
+    func generate(_ input: BirthInput, at epochMs: Double? = nil) async throws -> OrbitFrame {
+        if let epochMs, !epochMs.isFinite || epochMs.rounded() != epochMs {
+            invalidate()
+            throw OrbitEngineError.unavailable("观测时间必须是有效的整数毫秒。")
+        }
+        let data = try JSONEncoder().encode(GenerationRequest(input: input, epochMs: epochMs))
         return try await request("generate", payload: String(decoding: data, as: UTF8.self), replacesSession: true)
     }
 
@@ -150,7 +160,8 @@ final class OrbitEngine: @unchecked Sendable {
                 let natalPoints = try copyPoints(natal)
                 let frame = OrbitFrame(natal: natalPoints, flow: flowPoints,
                     birthPillars: metadata.birthPillars, flowPillars: metadata.flowPillars,
-                    dayun: metadata.dayun, epochMs: metadata.epochMs, birthMs: metadata.birthMs,
+                    dayun: metadata.dayun, dayunPeriods: metadata.dayunPeriods,
+                    epochMs: metadata.epochMs, birthMs: metadata.birthMs,
                     nowMs: metadata.nowMs, seedPointsRemaining: metadata.seedPointsRemaining,
                     profileLabel: metadata.profileLabel, mode: metadata.mode)
                 guard let continuation = pending.removeValue(forKey: response.id) else { return }

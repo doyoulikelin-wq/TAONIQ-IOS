@@ -9,7 +9,10 @@ import Observation
     private(set) var frame: OrbitFrame?
     private(set) var frameID = 0
     private(set) var isLoading = false
+    private(set) var isSeeking = false
+    private(set) var seekTargetMs: Double?
     private(set) var isPlaying = false
+    private(set) var speed: EvolutionSpeed = .month
     private(set) var isDemo: Bool
     private(set) var errorMessage: String?
 
@@ -44,8 +47,8 @@ import Observation
     var reachedPresent: Bool { frame.map { $0.epochMs >= $0.nowMs } ?? false }
 
     var status: String {
-        if isLoading { return "正在生成轨迹" }
-        if errorMessage != nil { return "请重新输入生辰" }
+        if isLoading { return isSeeking ? "正在定位所选时间" : "正在生成轨迹" }
+        if errorMessage != nil { return "请重新选择时间或生辰" }
         if reachedPresent { return "已演化至今" }
         if isPlaying { return "流盘正在连续演化" }
         if sessionStarted { return "已暂停 · 可从此刻继续" }
@@ -59,6 +62,24 @@ import Observation
     }
 
     func generate(_ birth: BirthInput, userSubmitted: Bool = true, playWhenReady: Bool = false) {
+        prepare(birth, targetEpochMs: nil, retainNatal: false,
+                userSubmitted: userSubmitted, playWhenReady: playWhenReady)
+    }
+
+    func setSpeed(_ value: EvolutionSpeed) {
+        // An already computed packet is kept: discarding it would skip history.
+        speed = value
+    }
+
+    func seek(to epochMs: Double) {
+        guard let displayed = frame, epochMs.isFinite else { return }
+        let target = min(displayed.nowMs, max(displayed.birthMs, epochMs.rounded()))
+        prepare(input, targetEpochMs: target, retainNatal: true,
+                userSubmitted: false, playWhenReady: false)
+    }
+
+    private func prepare(_ birth: BirthInput, targetEpochMs: Double?, retainNatal: Bool,
+                         userSubmitted: Bool, playWhenReady: Bool) {
         generation += 1
         let request = generation
         isPlaying = false
@@ -69,21 +90,27 @@ import Observation
         engine = OrbitEngine()
         let currentEngine = engine
         isLoading = true
+        isSeeking = retainNatal
+        seekTargetMs = targetEpochMs
         errorMessage = nil
         buffered = nil
         sessionStarted = false
-        frame = nil
-        natal = []
-        flow = []
-        frameID += 1
+        if !retainNatal {
+            frame = nil
+            natal = []
+            flow = []
+            frameID += 1
+        }
         generationTask = Task { [weak self] in
             do {
-                let result = try await currentEngine.generate(birth)
+                let result = try await currentEngine.generate(birth, at: targetEpochMs)
                 guard let self, request == self.generation, !Task.isCancelled else { return }
                 self.input = birth
                 self.isDemo = userSubmitted ? false : self.isDemo
                 self.accept(result)
                 self.isLoading = false
+                self.isSeeking = false
+                self.seekTargetMs = nil
                 if userSubmitted, !self.testing,
                    let data = try? JSONEncoder().encode(birth) {
                     UserDefaults.standard.set(data, forKey: self.storageKey)
@@ -92,6 +119,8 @@ import Observation
             } catch {
                 guard let self, request == self.generation, !Task.isCancelled else { return }
                 self.isLoading = false
+                self.isSeeking = false
+                self.seekTargetMs = nil
                 self.errorMessage = error.localizedDescription
             }
         }
@@ -130,8 +159,8 @@ import Observation
                         guard let displayed = self.frame else { return }
                         let remaining = displayed.nowMs - displayed.epochMs
                         guard remaining > 0 else { self.pause(); return }
-                        // 7 calendar days / wall second; every frame covers .32 model units.
-                        next = try await currentEngine.advance(civilMilliseconds: min(24_192_000, remaining))
+                        let duration = self.speed.civilMillisecondsPerFrame(at: displayed.epochMs)
+                        next = try await currentEngine.advance(civilMilliseconds: min(duration, remaining))
                     }
                     guard request == self.generation, !Task.isCancelled else { return }
                     self.buffered = next

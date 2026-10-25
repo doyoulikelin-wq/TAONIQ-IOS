@@ -1,13 +1,25 @@
 /* Native bridge only: computation remains in the versioned model bundle. */
 (function () {
     'use strict';
-    let generation = 0, chart = null, seed = null, stream = null, horizonMs = null, currentEpochMs = null;
+    let generation = 0, chart = null, seed = null, stream = null, horizonMs = null, currentEpochMs = null, dayunPeriods = [];
+    function periodsFor(nextChart, horizon) {
+        const periods = [], first = nextChart.dayun.firstStartMs;
+        if (first > nextChart.birthMs) periods.push({step: 0, pillar: '未起运', startMs: nextChart.birthMs, endMs: first});
+        for (let step = 1; ; step++) {
+            const start = TaoModel.addYears(first, (step - 1) * 10);
+            if (start > horizon) break;
+            const period = TaoModel.dayunAt(nextChart, start);
+            periods.push({step: period.step, pillar: period.pillar, startMs: period.startMs, endMs: period.endMs});
+        }
+        return periods;
+    }
     function frame(result) {
         const temporal = result.temporal;
         return {
             birthPillars: chart.pillars.slice(),
             flowPillars: temporal.flowPillars.slice(),
             dayun: temporal.dayun.pillar || '未起运',
+            dayunPeriods,
             epochMs: temporal.epochMs,
             birthMs: chart.birthMs,
             nowMs: horizonMs,
@@ -22,19 +34,22 @@
         else nativeResult(JSON.stringify({id, ok, error: String(value)}), null, null);
     }
     globalThis.TaoNative = {
-        invalidate() { generation++; chart = null; seed = null; stream = null; horizonMs = null; currentEpochMs = null; },
+        invalidate() { generation++; chart = null; seed = null; stream = null; horizonMs = null; currentEpochMs = null; dayunPeriods = []; },
         async request(id, operation, payload) {
             const token = generation;
             const cancelled = () => token !== generation;
             try {
                 let result;
                 if (operation === 'generate') {
-                    const nextChart = TaoModel.chart(payload);
+                    const nextChart = TaoModel.chart(payload.input || payload);
                     const nextHorizon = Math.max(nextChart.birthMs, Date.now());
-                    result = await TaoModel.compute({chart: nextChart, epochMs: nextChart.birthMs}, {shouldCancel: cancelled});
+                    const selectedEpoch = payload.epochMs == null ? nextChart.birthMs : payload.epochMs;
+                    if (!Number.isSafeInteger(selectedEpoch) || selectedEpoch < nextChart.birthMs || selectedEpoch > nextHorizon)
+                        throw Error('观测时刻须位于出生至本次生成时的当前时间之间。');
+                    result = await TaoModel.compute({chart: nextChart, epochMs: selectedEpoch}, {shouldCancel: cancelled});
                     if (cancelled()) throw Error('Cancelled');
                     chart = nextChart; seed = result; stream = null;
-                    horizonMs = nextHorizon; currentEpochMs = nextChart.birthMs;
+                    horizonMs = nextHorizon; currentEpochMs = selectedEpoch; dayunPeriods = periodsFor(nextChart, nextHorizon);
                     send(id, true, result, true);
                     return;
                 }
@@ -42,7 +57,7 @@
                 if (operation === 'start') {
                     if (!stream) stream = TaoContinuous.create({sessionId: 'native-' + generation, chart,
                         epochMs: seed.temporal.epochMs, profile: seed.profile, seedPoints: seed.custom,
-                        seedParameters: seed.parameters, seedProvenance: 'frozen-birth-window'});
+                        seedParameters: seed.parameters, seedProvenance: seed.temporal.epochMs === chart.birthMs ? 'frozen-birth-window' : 'frozen-date-window'});
                     result = stream.snapshot();
                 } else if (operation === 'advance') {
                     if (!stream) throw Error('请先开始连续演化。');

@@ -114,6 +114,93 @@ final class TAONIQFlowUITests: XCTestCase {
         waitForExpectations(timeout: 5)
     }
 
+    @MainActor
+    func testSpeedModesAndYearDayunSlidersUseTheLiveTrajectory() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--uitesting", "--disable-rotation"]
+        app.launch()
+        let play = app.buttons["playPauseButton"]
+        XCTAssertTrue(play.waitForExistence(timeout: 30))
+        let ready = NSPredicate(format: "enabled == true")
+        expectation(for: ready, evaluatedWith: play)
+        waitForExpectations(timeout: 45)
+        let date = app.descendants(matching: .any)["flowDate"]
+        let originalEpoch = try XCTUnwrap(Int64(date.value as? String ?? ""))
+        let birthPillars = app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@ AND label CONTAINS %@", "birthPillars", "年柱", "时柱")).firstMatch
+        let originalPillars = birthPillars.label
+        let year = app.sliders["yearSlider"]
+        XCTAssertTrue(year.exists)
+        for _ in 0..<4 where !year.isHittable { app.swipeUp() }
+        XCTAssertTrue(year.isHittable)
+        year.adjust(toNormalizedSliderPosition: 0.48)
+        print("YEAR_SLIDER_VALUE", String(reflecting: year.value), "LABEL", year.label)
+        let yearCaption = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[0-9]{4}年$")).firstMatch
+        XCTAssertTrue(yearCaption.exists)
+        let selectedYear = try XCTUnwrap(Int(yearCaption.label.dropLast()))
+        expectation(for: ready, evaluatedWith: play)
+        waitForExpectations(timeout: 45)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 8 * 3_600)!
+        let afterYear = try XCTUnwrap(Int64(date.value as? String ?? ""))
+        XCTAssertEqual(calendar.component(.year, from: Date(timeIntervalSince1970: Double(afterYear) / 1_000)), selectedYear)
+        XCTAssertGreaterThan(afterYear, originalEpoch)
+        XCTAssertEqual(play.value as? String, "paused")
+
+        let dayun = app.sliders["dayunSlider"]
+        if !dayun.isHittable { app.swipeDown() }
+        XCTAssertTrue(dayun.isHittable)
+        dayun.adjust(toNormalizedSliderPosition: 0.66)
+        expectation(for: ready, evaluatedWith: play)
+        waitForExpectations(timeout: 45)
+        let afterDayun = try XCTUnwrap(Int64(date.value as? String ?? ""))
+        XCTAssertNotEqual(afterDayun, afterYear)
+        print("DAYUN_SLIDER_VALUE", String(reflecting: dayun.value), "LABEL", dayun.label)
+        let dayunValue = try XCTUnwrap(dayun.value as? String)
+        let startText = try XCTUnwrap(dayunValue.components(separatedBy: "起于 ").last)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy.MM.dd HH:mm:ss"
+        let shownStart = try XCTUnwrap(formatter.date(from: startText))
+        XCTAssertEqual(afterDayun, Int64(shownStart.timeIntervalSince1970 * 1_000), "The dayun control selects the personal period start, not a rounded January 1")
+        XCTAssertGreaterThan(afterDayun, originalEpoch)
+        XCTAssertEqual(birthPillars.label, originalPillars)
+        XCTAssertEqual(play.value as? String, "paused")
+
+        let dayMode = app.buttons["speed-day"]
+        for _ in 0..<3 where !dayMode.isHittable { app.swipeDown() }
+        XCTAssertTrue(dayMode.isHittable)
+        for name in ["dayun", "year", "month", "day", "hour"] {
+            XCTAssertTrue(app.buttons["speed-" + name].exists)
+        }
+        dayMode.tap()
+        XCTAssertEqual(dayMode.value as? String, "selected")
+        play.tap()
+        expectation(for: dateChangedPredicate(String(afterDayun)), evaluatedWith: date)
+        waitForExpectations(timeout: 15)
+        let beforeSpeedChange = try XCTUnwrap(Int64(date.value as? String ?? ""))
+        app.buttons["speed-year"].tap()
+        XCTAssertEqual(app.buttons["speed-year"].value as? String, "selected")
+        expectation(for: NSPredicate { _, _ in
+            (Int64(date.value as? String ?? "") ?? 0) > beforeSpeedChange
+        }, evaluatedWith: date)
+        waitForExpectations(timeout: 15)
+        XCTAssertEqual(play.value as? String, "playing")
+        play.tap()
+        XCTAssertEqual(birthPillars.label, originalPillars)
+        let paused = try XCTUnwrap(Int64(date.value as? String ?? ""))
+        XCTAssertGreaterThan(paused, afterDayun, "Changing speed continues the selected session rather than returning to birth")
+        let preview = app.staticTexts["seekPreview"]
+        XCTAssertTrue(preview.label.hasPrefix("当前"), "A completed drag must not leave the UI in its pending-seek state")
+        let normalizedPreview = preview.label.components(separatedBy: .whitespaces).filter { !$0.isEmpty }.joined(separator: " ")
+        XCTAssertEqual(normalizedPreview, "当前 " + formatter.string(from: Date(timeIntervalSince1970: Double(paused) / 1_000)))
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "TAONIQ-speed-and-time-navigation"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     private func dateChangedPredicate(_ old: String) -> NSPredicate {
         NSPredicate { object, _ in ((object as? XCUIElement)?.value as? String) != old }
     }
