@@ -1,0 +1,23 @@
+{
+  "sourceRepository": "https://github.com/doyoulikelin-wq/TAONIQ",
+  "sourceCommit": "80dc82ebb5503845fd3f0bd7fda8fb3351c6ac20",
+  "engineSHA256": "20804c802df3a81075213e5cade85c8a38b64cbacce4fdc57925215ed5baa0bf",
+  "files": {
+    "../vendor/lunar-1.7.7.js": "9750324bfe1aa63c146f8c72b1143df924466c11c8a5277d7d9225c541a18aaa",
+    "encoding.js": "b0faaa0297228f39b53271962072f649fcca987b33a031f409467b5605985717",
+    "drive.js": "5f75d550d965ee86fe2474f5cce4909b39e863b7e74e0da461cabadb20817c45",
+    "experiment.js": "8bd922be7a0f313e7e4a6797476f4692ae06ef88fd5aa4e68cf11b7fb0342704",
+    "morphology.js": "7230e753512471118689e4c6c8c2f9fc1c4be103faf706152fd2fc659b8061cb",
+    "distance.js": "d8f9f2069be00189e790c9cf216dd30aea31d2755dd4bd4288bd7664ee442241",
+    "mapper.js": "9742beb044cdb20b8fdf8bad10daf13a16c69388c5ec6116c317143609421f8a",
+    "model.js": "180ca41ddab8bb43f010ab38417c3f73e0f1248dec38a63534637e8868d70aa4",
+    "continuous.js": "ab686ea2fdd83d6108b195fc0c0f3c8ee45103f5ecc0c641fb8914d8a26a7394",
+    "atlas-model.json": "88d2c84edf86c98b03ab690e3737e5c86840cef34851cf25dd573d413ecb6092",
+    "drive-config.json": "ef46775da3b0f55ff00b1fd4083fe88043a4802870397e3c14ac54f088298440",
+    "calibration-protocol.json": "48d65ccfb98a9f1c5bcd2ba52572db99318d2ffb96d3db9ef7d924265bbe15e6",
+    "examples.json": "fb42137a2bd0280e360981b8fe3553a343621bc8e483461d3c0cf7bed3cd622f"
+  },
+  "modelUnitsPerCivilDay": 1.1428571428571428,
+  "responseTimeModelUnits": 1,
+  "note": "Exact upstream model sources, data embedded. Browser Worker shell omitted. Native JavaScriptCore host supplies timers."
+}
